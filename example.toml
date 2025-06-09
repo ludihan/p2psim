@@ -1,0 +1,18 @@
+min_neighbours = 2
+max_neighbours = 4
+
+nodes.n1 = [
+    "r1",
+    "r2",
+    "r3",
+] 
+nodes.n2 =[
+    "r4",
+    "r5",
+] 
+
+edges = [
+    ["n1", "n2"],
+    ["n1", "n3"],
+    ["n2", "n4"],
+]
