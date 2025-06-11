@@ -20,6 +20,7 @@ executable p2psim
         , megaparsec
         , text
         , toml-reader
+        , random
 
     other-modules:
         Repl
