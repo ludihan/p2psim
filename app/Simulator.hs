@@ -4,35 +4,22 @@ module Simulator (
     simulate,
 ) where
 
-import Data.Map (Map)
+import Control.Monad.IO.Class (liftIO)
+import Data.List
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Set (Set)
 import qualified Data.Set as Set
 import System.Console.Haskeline
-import Types
 import System.Random
-import Data.List
-import Control.Monad.IO.Class (liftIO)
+import Types
+import Validator
 
-type Visited = Set.Set String
-
--- Turn edge list into an adjacency map
-buildAdjacency :: Edges -> Map String [String]
-buildAdjacency = Map.fromListWith (++) . concatMap expandEdge
-  where
-    expandEdge [a, b] = [(a, [b]), (b, [a])]
-    expandEdge _ = []
-
--- Check if a node has the resource
-hasResource :: String -> String -> Nodes -> Bool
+hasResource :: String -> String -> Resources -> Bool
 hasResource node res nodesMap = maybe False (elem res) (Map.lookup node nodesMap)
 
 simulate :: Config -> Search -> InputT IO ()
 simulate config@Config{..} search@Search{..} = do
-    outputStrLn $ show config
-    outputStrLn $ show search
-    isValid <- validate config search
+    isValid <- validateSearch config search
     if not isValid
         then outputStrLn "Validation failed. Simulation aborted."
         else do
@@ -44,96 +31,68 @@ simulate config@Config{..} search@Search{..} = do
             outputStrLn ""
 
             result <- case algo of
-                Flooding -> flooding nodes edges nodeId resourceId ttl
-                InformedFlooding -> informedFlooding nodes edges nodeId resourceId ttl
-                RandomWalk -> randomWalk nodes edges nodeId resourceId ttl
-                InformedRandomWalk -> informedRandomWalk nodes edges nodeId resourceId ttl
+                Flooding -> flooding resources edges nodeId resourceId ttl
+                InformedFlooding -> informedFlooding resources edges nodeId resourceId ttl
+                RandomWalk -> randomWalk resources edges nodeId resourceId ttl
+                InformedRandomWalk -> informedRandomWalk resources edges nodeId resourceId ttl
             outputStrLn $ case result of
-                SearchFound -> "Search successful!"
-                SearchNotFound -> "Search failed: resource not found."
+                SearchFound -> "Search successful!\n"
+                SearchNotFound -> "Search failed...\n"
 
-validate :: Config -> Search -> InputT IO Bool
-validate Config{..} Search{..} = do
-    let errors =
-            [ if nodeId `notElem` Map.keys nodes
-                then Just $ "Error: node \"" ++ nodeId ++ "\" does not exist."
-                else Nothing
-            , if ttl < 0
-                then Just "Error: TTL must be non-negative."
-                else Nothing
-            , if not (resourceExists resourceId nodes)
-                then Just $ "Error: resource \"" ++ resourceId ++ "\" not found in any node."
-                else Nothing
-            ]
-                ++ neighborErrors minNeighbors maxNeighbors nodes
-
-    let errs = catMaybes errors
-
-    mapM_ outputStrLn errs
-    return $ null errs -- success = no errors
-
--- Check if the resource exists in any node
-resourceExists :: String -> Nodes -> Bool
-resourceExists rid = any (elem rid)
-
--- Check neighbor counts of all nodes
-neighborErrors :: Maybe Int -> Maybe Int -> Nodes -> [Maybe String]
-neighborErrors minN maxN nodeMap =
-    let check (node, neighbors) =
-            let count = length neighbors
-                minErr = case minN of
-                    Just n | count < n -> Just $ "Error: node \"" ++ node ++ "\" has fewer than " ++ show n ++ " neighbors."
-                    _ -> Nothing
-                maxErr = case maxN of
-                    Just n | count > n -> Just $ "Error: node \"" ++ node ++ "\" has more than " ++ show n ++ " neighbors."
-                    _ -> Nothing
-             in [minErr, maxErr]
-     in concatMap check (Map.toList nodeMap)
-
-flooding :: Nodes -> Edges -> String -> String -> Int -> InputT IO SearchResult
-flooding nodes edges start target ttl = go start ttl Set.empty
+flooding :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
+flooding resources edges start target ttl = go Nothing start ttl Set.empty
   where
-    adj = buildAdjacency edges
+    adj = buildAdjacencyFromEdges edges
 
-    go node 0 _ = return SearchNotFound
-    go node t visited
-        | hasResource node target nodes = do
+    go _ _ 0 _ = return SearchNotFound
+    go mParent node t visited
+        | hasResource node target resources = do
             outputStrLn $ "Found resource at " ++ node
             return SearchFound
         | otherwise = do
             let visited' = Set.insert node visited
             let neighbors = fromMaybe [] (Map.lookup node adj)
-            let next = filter (`Set.notMember` visited') neighbors
-            outputStrLn $ "Visiting " ++ node ++ " (TTL=" ++ show t ++ ")"
-            searchResults <- mapM (\n -> go n (t - 1) visited') next
-            return $ if SearchFound `elem` searchResults then SearchFound else SearchNotFound
+            let nextNodes = filter (`Set.notMember` visited') neighbors
+            outputStrLn $
+                case mParent of
+                    Just p ->
+                        "flooding: " ++ p ++ " -> " ++ node ++ " (TTL=" ++ show t ++ ")"
+                    Nothing ->
+                        "flooding: " ++ node ++ " -> " ++ node ++ " (TTL=" ++ show t ++ ")"
+            results <- mapM (\n -> go (Just node) n (t - 1) visited') nextNodes
+            return $ if SearchFound `elem` results then SearchFound else SearchNotFound
 
-informedFlooding :: Nodes -> Edges -> String -> String -> Int -> InputT IO SearchResult
-informedFlooding nodes edges start target ttl = go start ttl Set.empty
+informedFlooding :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
+informedFlooding resources edges start target ttl = go Nothing start ttl Set.empty
   where
-    adj = buildAdjacency edges
+    adj = buildAdjacencyFromEdges edges
 
-    go node 0 _ = return SearchNotFound
-    go node t visited
-        | hasResource node target nodes = do
+    go _ _ 0 _ = return SearchNotFound
+    go mParent node t visited
+        | hasResource node target resources = do
             outputStrLn $ "Found resource at " ++ node
             return SearchFound
         | otherwise = do
             let visited' = Set.insert node visited
             let neighbors = fromMaybe [] (Map.lookup node adj)
-            let sortedNeighbors = filter (`Set.notMember` visited') (sort neighbors)
-            outputStrLn $ "Visiting " ++ node ++ " (TTL=" ++ show t ++ ")"
-            searchResults <- mapM (\n -> go n (t - 1) visited') sortedNeighbors
-            return $ if SearchFound `elem` searchResults then SearchFound else SearchNotFound
+            let nextNodes = filter (`Set.notMember` visited') $ sort neighbors
+            outputStrLn $
+                case mParent of
+                    Just p ->
+                        "informed_flooding: " ++ p ++ " -> " ++ node ++ " (TTL=" ++ show t ++ ")"
+                    Nothing ->
+                        "informed_flooding: " ++ node ++ " -> " ++ node ++ " (TTL=" ++ show t ++ ")"
+            results <- mapM (\n -> go (Just node) n (t - 1) visited') nextNodes
+            return $ if SearchFound `elem` results then SearchFound else SearchNotFound
 
-randomWalk :: Nodes -> Edges -> String -> String -> Int -> InputT IO SearchResult
-randomWalk nodes edges start target ttl = go start ttl Set.empty
+randomWalk :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
+randomWalk resources edges start target ttl = go start ttl Set.empty
   where
-    adj = buildAdjacency edges
+    adj = buildAdjacencyFromEdges edges
 
-    go node 0 _ = return SearchNotFound
+    go _ 0 _ = return SearchNotFound
     go node t visited
-        | hasResource node target nodes = do
+        | hasResource node target resources = do
             outputStrLn $ "Found resource at " ++ node
             return SearchFound
         | otherwise = do
@@ -143,18 +102,18 @@ randomWalk nodes edges start target ttl = go start ttl Set.empty
                 then return SearchNotFound
                 else do
                     i <- liftIO $ randomRIO (0, length neighbors - 1)
-                    let next = neighbors !! i
-                    outputStrLn $ "Randomly walking from " ++ node ++ " to " ++ next ++ " (TTL=" ++ show t ++ ")"
-                    go next (t - 1) visited'
+                    let next' = neighbors !! i
+                    outputStrLn $ "random_walk: " ++ node ++ " -> " ++ next' ++ " (TTL=" ++ show t ++ ")"
+                    go next' (t - 1) visited'
 
-informedRandomWalk :: Nodes -> Edges -> String -> String -> Int -> InputT IO SearchResult
-informedRandomWalk nodes edges start target ttl = go start ttl Set.empty
+informedRandomWalk :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
+informedRandomWalk resources edges start target ttl = go start ttl Set.empty
   where
-    adj = buildAdjacency edges
+    adj = buildAdjacencyFromEdges edges
 
-    go node 0 _ = return SearchNotFound
+    go _ 0 _ = return SearchNotFound
     go node t visited
-        | hasResource node target nodes = do
+        | hasResource node target resources = do
             outputStrLn $ "Found resource at " ++ node
             return SearchFound
         | otherwise = do
@@ -164,6 +123,6 @@ informedRandomWalk nodes edges start target ttl = go start ttl Set.empty
                 then return SearchNotFound
                 else do
                     i <- liftIO $ randomRIO (0, length neighbors - 1)
-                    let next = neighbors !! i
-                    outputStrLn $ "Informed walk from " ++ node ++ " to " ++ next ++ " (TTL=" ++ show t ++ ")"
-                    go next (t - 1) visited'
+                    let next' = neighbors !! i
+                    outputStrLn $ "informed_random_walk " ++ node ++ " -> " ++ next' ++ " (TTL=" ++ show t ++ ")"
+                    go next' (t - 1) visited'

@@ -3,9 +3,10 @@
 
 module Types where
 
+import Control.Monad (forM_)
+import Data.List
 import Data.Map (Map)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
+import qualified Data.Map as Map
 import Data.Void
 import System.Console.ANSI
 import System.IO (stdout)
@@ -16,29 +17,38 @@ import qualified Text.Megaparsec.Char.Lexer as L
 
 type Parser = Parsec Void String
 
-newtype Err = Err T.Text
+newtype Err = Err String
 
 data Config = Config
     { minNeighbors :: Maybe Int
     , maxNeighbors :: Maybe Int
-    , nodes :: Nodes
+    , resources :: Resources
     , edges :: Edges
     }
     deriving (Show)
 
 type Edges = [[String]]
-type Nodes = Map String [String]
+
+buildAdjacencyFromEdges :: Edges -> Map.Map String [String]
+buildAdjacencyFromEdges edges =
+    let
+        expandEdge [a, b] = [(a, [b]), (b, [a])]
+        expandEdge _ = []
+
+        allPairs = concatMap expandEdge edges
+
+        merged = Map.fromListWith (++) allPairs
+     in
+        Map.map nub merged
+type Resources = Map String [String]
 
 instance DecodeTOML Config where
     tomlDecoder =
         Config
             <$> getFieldOpt "min_neighbours"
             <*> getFieldOpt "max_neighbours"
-            <*> getField "nodes"
+            <*> getField "resources"
             <*> getField "edges"
-
-newtype Resource = Resource String
-    deriving (Show)
 
 newtype Edge = Edge [String]
     deriving (Show)
@@ -58,22 +68,22 @@ instance Show SearchAlgorithm where
     show RandomWalk = "random_walk"
     show InformedRandomWalk = "informed_random_walk"
 
-printErr :: Err -> IO ()
-printErr (Err e) = do
-    TIO.putStrLn e
-    stdoutSupportsANSI <- hNowSupportsANSI stdout
-    TIO.putStr "p2psim: "
-    if stdoutSupportsANSI
-        then do
-            setSGR [SetConsoleIntensity BoldIntensity]
-            setSGR [SetColor Foreground Dull Red]
-            TIO.putStr "error: "
-            setSGR [SetConsoleIntensity BoldIntensity]
-            setSGR [SetColor Foreground Vivid White]
-            TIO.putStrLn e
-            setSGR [Reset]
-        else do
-            TIO.putStr "error: "
+printErrs :: [Err] -> IO ()
+printErrs e =
+    forM_ e $ \(Err x) -> do
+        stdoutSupportsANSI <- hNowSupportsANSI stdout
+        if stdoutSupportsANSI
+            then do
+                setSGR [SetConsoleIntensity BoldIntensity]
+                setSGR [SetColor Foreground Dull Red]
+                putStr "error: "
+                setSGR [SetConsoleIntensity BoldIntensity]
+                setSGR [SetColor Foreground Vivid White]
+                putStrLn x
+                setSGR [Reset]
+            else do
+                putStr "error: "
+                putStrLn x
 
 data Search = Search
     { nodeId :: String
@@ -86,6 +96,7 @@ data Search = Search
 data Command
     = SearchCommand Search
     | Help
+    | List
 
 instance Show Command where
     show (SearchCommand Search{..}) =
@@ -101,7 +112,9 @@ instance Show Command where
             ]
     show Help =
         "Use \"search\" with the nodeId, resourceId, ttl and algo\n\
-        \Use \"quit\" to exit the program"
+        \Use \"quit\" to exit the program\n\
+        \Use \"list\" to print program info"
+    show List = "List"
 
 identifier :: Parser String
 identifier = (:) <$> letterChar <*> many (alphaNumChar <|> single '_')
@@ -141,12 +154,19 @@ parseSearch = do
                 )
 
     return $ SearchCommand $ Search nodeId' resourceId' ttl' algo'
+
 parseHelp :: Parser Command
 parseHelp = do
     space
     _ <- string' "help"
     return Help
 
+parseList :: Parser Command
+parseList = do
+    space
+    _ <- string' "list"
+    return List
+
 parseCommand :: Parser Command
 parseCommand =
-    try parseSearch <|> try parseHelp
+    try parseSearch <|> try parseHelp <|> try parseList
