@@ -47,7 +47,26 @@ flooding resources edges start target ttl = go Nothing start ttl Set.empty
     go _ _ 0 _ = return SearchNotFound
     go mParent node t visited
         | hasResource node target resources = do
-            outputStrLn $ "Found resource at " ++ node
+            outputStrLn $
+                case mParent of
+                    Just p ->
+                        "flooding: "
+                            ++ p
+                            ++ " -> "
+                            ++ node
+                            ++ " (TTL="
+                            ++ show t
+                            ++ ")"
+                            ++ " (resource found)"
+                    Nothing ->
+                        "flooding: "
+                            ++ node
+                            ++ " -> "
+                            ++ node
+                            ++ " (TTL="
+                            ++ show t
+                            ++ ")"
+                            ++ " (resource found)"
             return SearchFound
         | otherwise = do
             let visited' = Set.insert node visited
@@ -70,7 +89,26 @@ informedFlooding resources edges start target ttl = go Nothing start ttl Set.emp
     go _ _ 0 _ = return SearchNotFound
     go mParent node t visited
         | hasResource node target resources = do
-            outputStrLn $ "Found resource at " ++ node
+            outputStrLn $
+                case mParent of
+                    Just p ->
+                        "informed_flooding: "
+                            ++ p
+                            ++ " -> "
+                            ++ node
+                            ++ " (TTL="
+                            ++ show t
+                            ++ ")"
+                            ++ " (resource found)"
+                    Nothing ->
+                        "informed_flooding: "
+                            ++ node
+                            ++ " -> "
+                            ++ node
+                            ++ " (TTL="
+                            ++ show t
+                            ++ ")"
+                            ++ " (resource found)"
             return SearchFound
         | otherwise = do
             let visited' = Set.insert node visited
