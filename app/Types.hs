@@ -97,24 +97,7 @@ data Command
     = SearchCommand Search
     | Help
     | List
-
-instance Show Command where
-    show (SearchCommand Search{..}) =
-        concat
-            [ "Starting search from node "
-            , nodeId
-            , ", looking for resource "
-            , resourceId
-            , ", with TTL set to "
-            , show ttl
-            , ", with algorithm "
-            , show algo
-            ]
-    show Help =
-        "Use \"search\" with the nodeId, resourceId, ttl and algo\n\
-        \Use \"quit\" to exit the program\n\
-        \Use \"list\" to print program info"
-    show List = "List"
+    deriving (Show)
 
 identifier :: Parser String
 identifier = (:) <$> letterChar <*> many (alphaNumChar <|> single '_')
