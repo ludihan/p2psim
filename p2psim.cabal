@@ -18,11 +18,12 @@ executable p2psim
         , containers
         , haskeline
         , megaparsec
+        , random
         , text
         , toml-reader
-        , random
 
     other-modules:
+        Config
         Repl
         Simulator
         Types

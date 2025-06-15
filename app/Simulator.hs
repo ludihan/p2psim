@@ -1,148 +1,99 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Simulator (
-    simulate,
+    simulation,
 ) where
 
 import Control.Monad.IO.Class (liftIO)
-import Data.List
+import Data.List (sort)
 import qualified Data.Map as Map
-import Data.Maybe
+import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
+import Data.Text (Text)
+import qualified Data.Text.IO as TIO
 import System.Console.Haskeline
 import System.Random
-import Text.Printf
 import Types
 import Validator
 
-hasResource :: String -> String -> Resources -> Bool
-hasResource nCurrent res nodesMap = maybe False (elem res) (Map.lookup nCurrent nodesMap)
-
-simulate :: Config -> Search -> InputT IO ()
-simulate config@Config{..} search@Search{..} = do
+simulation :: Config -> Search -> InputT IO ()
+simulation config search@Search{..} = do
     isValid <- validateSearch config search
     if not isValid
-        then outputStrLn "Validation failed. Simulation aborted."
+        then liftIO $ TIO.putStrLn "Validation failed. Simulation aborted."
         else do
-            outputStrLn $
-                intercalate
-                    "\n"
-                    [ "Search request : "
-                    , "  From node    : " ++ nodeId
-                    , "  For resource : " ++ resourceId
-                    , "  TTL          : " ++ show ttl
-                    , "  Algorithm    : " ++ show algo
-                    , ""
-                    ]
-            result <- case algo of
-                Flooding -> flooding resources edges nodeId resourceId ttl
-                InformedFlooding -> informedFlooding resources edges nodeId resourceId ttl
-                RandomWalk -> randomWalk resources edges nodeId resourceId ttl
-                InformedRandomWalk -> informedRandomWalk resources edges nodeId resourceId ttl
+            gen <- liftIO newStdGen
+            let strategy = strategyFor algo
+                (logTrace, result) = graphSearch config search strategy gen
+            mapM_ (liftIO . TIO.putStrLn . showSearch) logTrace
+            liftIO $ TIO.putStrLn (if result then "Search successful!" else "Search failed...")
 
-            outputStrLn $ case result of
-                SearchFound -> "Search successful!\n"
-                SearchNotFound -> "Search failed...\n"
-
-flooding :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
-flooding resources edges start target ttl = go Nothing start ttl Set.empty
+graphSearch ::
+    Config ->
+    Search ->
+    SearchStrategy ->
+    StdGen ->
+    SearchResult
+graphSearch config@Config{..} search@Search{..} strategy@SearchStrategy{..} gen =
+    go gen Nothing start ttl Set.empty
   where
     adj = buildAdjacencyFromEdges edges
+    start = nodeId
+    target = resourceId
 
-    go nParent nCurrent t@0 _ = do
-        outputStrLn $ showRequest Flooding nParent nCurrent t False
-        return SearchNotFound
-    go nParent nCurrent t visited
-        | hasResource nCurrent target resources = do
-            outputStrLn $ showRequest Flooding nParent nCurrent t True
-            return SearchFound
-        | otherwise = do
-            let visited' = Set.insert nCurrent visited
-            let neighbors = fromMaybe [] (Map.lookup nCurrent adj)
-            let nextNodes = filter (`Set.notMember` visited') neighbors
-            outputStrLn $ showRequest Flooding nParent nCurrent t False
-            results <- mapM (\n -> go (Just nCurrent) n (t - 1) visited') nextNodes
-            return $ if SearchFound `elem` results then SearchFound else SearchNotFound
+    go :: StdGen -> Maybe Text -> Text -> Int -> Set.Set Text -> SearchResult
+    go _ _ _ 0 _ =
+        let step = Search start Nothing target 0 algo False
+         in ([step], False)
+    go g parent current t visited
+        | hasResource current target resources =
+            let step = Search current parent target t algo True
+             in ([step], True)
+        | otherwise =
+            let visited' = Set.insert current visited
+                neighbors0 = fromMaybe [] (Map.lookup current adj)
+                neighbors1 = filter (`Set.notMember` visited') neighbors0
+                ordered = order neighbors1
+                (nextNodes, g') =
+                    if useRandom
+                        then selectNext ordered visited' g
+                        else (ordered, g)
+                step = Search current parent target t algo False
+                outcomes = map (\n -> go g' (Just current) n (t - 1) visited') nextNodes
+                (traces, results) = unzip outcomes
+                found' = or results
+             in (step : concat traces, found')
 
-informedFlooding :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
-informedFlooding resources edges start target ttl = go Nothing start ttl Set.empty
-  where
-    adj = buildAdjacencyFromEdges edges
+floodingStrategy :: SearchStrategy
+floodingStrategy =
+    SearchStrategy
+        { selectNext = \ns _ g -> (ns, g)
+        , order = id
+        , useRandom = False
+        }
 
-    go nParent nCurrent t@0 _ = do
-        outputStrLn $ showRequest InformedFlooding nParent nCurrent t False
-        return SearchNotFound
-    go nParent nCurrent t visited
-        | hasResource nCurrent target resources = do
-            outputStrLn $ showRequest InformedFlooding nParent nCurrent t True
-            return SearchFound
-        | otherwise = do
-            let visited' = Set.insert nCurrent visited
-            let neighbors = fromMaybe [] (Map.lookup nCurrent adj)
-            let nextNodes = filter (`Set.notMember` visited') $ sort neighbors
-            outputStrLn $ showRequest InformedFlooding nParent nCurrent t False
-            results <- mapM (\n -> go (Just nCurrent) n (t - 1) visited') nextNodes
-            return $ if SearchFound `elem` results then SearchFound else SearchNotFound
+informedFloodingStrategy :: SearchStrategy
+informedFloodingStrategy = floodingStrategy{order = sort}
 
-randomWalk :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
-randomWalk resources edges start target ttl = go Nothing start ttl Set.empty
-  where
-    adj = buildAdjacencyFromEdges edges
+randomWalkStrategy :: SearchStrategy
+randomWalkStrategy =
+    SearchStrategy
+        { selectNext = \ns _ g ->
+            let (i, g') = randomR (0, length ns - 1) g
+             in ([ns !! i], g')
+        , order = id
+        , useRandom = True
+        }
 
-    go nParent nCurrent t@0 _ = do
-        outputStrLn $ showRequest RandomWalk nParent nCurrent t False
-        return SearchNotFound
-    go nParent nCurrent t visited
-        | hasResource nCurrent target resources = do
-            outputStrLn $ showRequest RandomWalk nParent nCurrent t True
-            return SearchFound
-        | otherwise = do
-            let visited' = Set.insert nCurrent visited
-            let neighbors = filter (`Set.notMember` visited') (fromMaybe [] (Map.lookup nCurrent adj))
-            if null neighbors
-                then return SearchNotFound
-                else do
-                    i <- liftIO $ randomRIO (0, length neighbors - 1)
-                    let next' = neighbors !! i
-                    outputStrLn $ showRequest RandomWalk nParent nCurrent t False
-                    go (Just nCurrent) next' (t - 1) visited'
+informedRandomWalkStrategy :: SearchStrategy
+informedRandomWalkStrategy = randomWalkStrategy{order = sort}
 
-informedRandomWalk :: Resources -> Edges -> String -> String -> Int -> InputT IO SearchResult
-informedRandomWalk resources edges start target ttl = go Nothing start ttl Set.empty
-  where
-    adj = buildAdjacencyFromEdges edges
+strategyFor :: SearchAlgorithm -> SearchStrategy
+strategyFor Flooding = floodingStrategy
+strategyFor InformedFlooding = informedFloodingStrategy
+strategyFor RandomWalk = randomWalkStrategy
+strategyFor InformedRandomWalk = informedRandomWalkStrategy
 
-    go nParent nCurrent t@0 _ = do
-        outputStrLn $ showRequest InformedRandomWalk nParent nCurrent t False
-        return SearchNotFound
-    go nParent nCurrent t visited
-        | hasResource nCurrent target resources = do
-            outputStrLn $ showRequest InformedRandomWalk nParent nCurrent t True
-            return SearchFound
-        | otherwise = do
-            let visited' = Set.insert nCurrent visited
-            let neighbors = sort $ filter (`Set.notMember` visited') (fromMaybe [] (Map.lookup nCurrent adj))
-            if null neighbors
-                then return SearchNotFound
-                else do
-                    i <- liftIO $ randomRIO (0, length neighbors - 1)
-                    let next' = neighbors !! i
-                    outputStrLn $ showRequest InformedRandomWalk nParent nCurrent t False
-                    go (Just nCurrent) next' (t - 1) visited'
-
-showRequest :: SearchAlgorithm -> Maybe String -> String -> Int -> Bool -> String
-showRequest algo parent current ttl found =
-    printf
-        "[%s] [TTL=%d]: %s -> %s (%s)"
-        (show algo)
-        ttl
-        (fromMaybe current parent)
-        current
-        ( if ttl == 0
-            then "dead"
-            else
-                if found
-                    then
-                        "resource found"
-                    else "searching"
-        )
+hasResource :: Text -> Text -> Resources -> Bool
+hasResource nCurrent res nodesMap = maybe False (elem res) (Map.lookup nCurrent nodesMap)
