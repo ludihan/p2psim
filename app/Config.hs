@@ -7,7 +7,6 @@ import Data.GraphViz
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.IO as TLIO
 import TOML
 import Types
 import Validator
@@ -27,9 +26,8 @@ renderConfig :: Config -> IO ()
 renderConfig Config{..} = do
     let adj = convertAdjMap $ buildAdjacencyFromEdges edges
     let myGraph = fromAdjacencyMap adj
-    TLIO.writeFile "graph.dot" (printDotGraph myGraph)
-    _ <- runGraphviz myGraph Png "graph.png"
-    putStrLn "graph written to graph.png"
+    fPath <- runGraphvizCommand Circo myGraph Png "graph.png"
+    putStrLn $ "graph written to " ++ fPath
 
 fromAdjacencyMap :: Map.Map TL.Text [TL.Text] -> Data.GraphViz.DotGraph TL.Text
 fromAdjacencyMap adj =
