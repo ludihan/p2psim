@@ -1,3 +1,7 @@
+min_neighbours = 2
+max_neighbours = 4 
+# (both of these are optional)
+
 edges = [
     ["n1", "n2"],
     ["n1", "n5"],
@@ -11,7 +15,7 @@ edges = [
 ]
 
 [resources]
-n1 = ["r1", "r2", "r3"]
+n1 = ["r1", "r1","r1", "r2", "r3"]
 n2 = ["r4", "r5"]
 n3 = ["r6"]
 n4 = ["r7"]
