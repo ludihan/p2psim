@@ -58,7 +58,7 @@ buildAdjacencyFromEdges edges' =
 type Resources = Map Text [Text]
 type Nodes = Map Text [Text]
 type Node = Text
-type Visited = Set.Set [Text]
+type Visited = Set.Set Text
 
 data SearchAlgorithm
     = Flooding

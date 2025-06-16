@@ -5,10 +5,12 @@ module Simulator (
     simulation,
 ) where
 
+import Data.List
 import qualified Data.Map as Map
-import Data.Maybe (fromMaybe)
+import Data.Ord
 import qualified Data.Set as Set
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.Random
 import Types
@@ -22,52 +24,99 @@ simulation config search = do
         else do
             gen <- newStdGen
             let trace = graphSearch config search gen
+            let nodeCounts = countNodeActivity trace
+            let (node, times) = head $ sortOn (Down . snd) (Map.toList nodeCounts)
             mapM_ (TIO.putStrLn . showSearch) trace
+            TIO.putStrLn $ "total of " <> T.pack (show $ length trace) <> " messages."
+            TIO.putStrLn $
+                T.concat
+                    [ "most messages mentioned node "
+                    , node
+                    , " ("
+                    , T.pack $ show times
+                    , " times"
+                    , ")"
+                    ]
             TIO.putStrLn (if any found trace then "search successful!" else "search failed...")
 
-graphSearch ::
-    Config ->
-    Search ->
-    StdGen ->
-    SearchResults
-graphSearch config@Config{..} search@Search{..} gen
-    | Set.member nodeId (Set.map head visited) = [search{found = False}]
-    | hasResource nodeId resourceId resources = [search{found = True}]
-    | ttl <= 0 = [search{found = False}]
+countNodeActivity :: [Search] -> Map.Map Text Int
+countNodeActivity = foldr add Map.empty
+  where
+    add Search{..} acc =
+        let acc' = Map.insertWith (+) nodeId 1 acc
+         in case nodeParentId of
+                Just pid -> Map.insertWith (+) pid 1 acc'
+                Nothing -> acc'
+
+graphSearch :: Config -> Search -> StdGen -> SearchResults
+graphSearch Config{..} search gen
+    | Set.member (nodeId search) (visited search) =
+        [search{found = False}]
+    | hasResource (nodeId search) (resourceId search) resources =
+        [search{found = True}]
+    | ttl search <= 0 =
+        [search{found = False}]
     | otherwise =
-        let adj = buildAdjacencyFromEdges edges
-            visited' = Set.insert [nodeId] visited
-            neighbors = fromMaybe [] (Map.lookup nodeId adj)
-            unvisited = filter (\n -> not (Set.member [n] visited')) neighbors
-         in case unvisited of
-                [] -> [search{visited = visited', found = False}]
-                _ ->
-                    let (nextNodes, gen') = case algo of
-                            Flooding -> (neighbors, gen)
-                            InformedFlooding -> (unvisited, gen)
-                            RandomWalk ->
-                                let (idx, g') = randomR (0, length neighbors - 1) gen
-                                 in ([neighbors !! idx], g')
-                            InformedRandomWalk ->
+        let
+            adj = buildAdjacencyFromEdges edges
+            neighbors = Map.findWithDefault [] (nodeId search) adj
+
+            visited' = Set.insert (nodeId search) (visited search)
+
+            unvisited = filter (`Set.notMember` visited') neighbors
+
+            sortByDegreeDesc :: [Text] -> [Text]
+            sortByDegreeDesc =
+                let degree n = length (Map.findWithDefault [] n adj)
+                 in sortOn (Data.Ord.Down . degree)
+
+            weightedRandom :: [a] -> [Int] -> StdGen -> (a, StdGen)
+            weightedRandom xs ws gen'' =
+                let total = sum ws
+                    (r, gen''') = randomR (1, total) gen''
+                 in (pick r (zip xs (scanl1 (+) ws)), gen''')
+              where
+                pick r ((x, w) : rest)
+                    | r <= w = x
+                    | otherwise = pick r rest
+                pick _ [] = error "weightedRandom: empty list"
+
+            (nextNodes, gen') =
+                case algo search of
+                    Flooding -> (unvisited, gen)
+                    InformedFlooding -> (sortByDegreeDesc unvisited, gen)
+                    RandomWalk ->
+                        if null unvisited
+                            then ([], gen)
+                            else
                                 let (idx, g') = randomR (0, length unvisited - 1) gen
                                  in ([unvisited !! idx], g')
+                    InformedRandomWalk ->
+                        if null unvisited
+                            then ([], gen)
+                            else
+                                let degrees = map (\n -> (n, length $ Map.findWithDefault [] n adj)) unvisited
+                                    (choices, weights) = unzip degrees
+                                    (choice, g') = weightedRandom choices weights gen
+                                 in ([choice], g')
 
-                        nextSearches =
-                            map
-                                ( \nextNode ->
-                                    Search
-                                        { nodeId = nextNode
-                                        , nodeParentId = Just nodeId
-                                        , resourceId = resourceId
-                                        , ttl = ttl - 1
-                                        , algo = algo
-                                        , found = False
-                                        , visited = visited'
-                                        }
-                                )
-                                nextNodes
-                        traces = concatMap (\s -> graphSearch config s gen') nextSearches
-                     in search : traces
+            nextSearches =
+                [ Search
+                    { nodeId = nid
+                    , nodeParentId = Just (nodeId search)
+                    , resourceId = resourceId search
+                    , ttl = ttl search - 1
+                    , algo = algo search
+                    , found = False
+                    , visited = visited'
+                    }
+                | nid <- nextNodes
+                ]
+
+            nextResults =
+                concatMap (\s -> graphSearch Config{..} s gen') nextSearches
+         in
+            search{visited = visited'} : nextResults
 
 hasResource :: Text -> Text -> Resources -> Bool
 hasResource nCurrent res nodesMap = maybe False (elem res) (Map.lookup nCurrent nodesMap)
