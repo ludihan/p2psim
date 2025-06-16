@@ -19,7 +19,14 @@ import Text.Megaparsec
 import Types
 
 repl :: Config -> IO ()
-repl cfg = runInputT defaultSettings loop
+repl cfg =
+    runInputT
+        Settings
+            { historyFile = Nothing
+            , complete = noCompletion
+            , autoAddHistory = True
+            }
+        loop
   where
     loop :: InputT IO ()
     loop = handleInterrupt loop $ withInterrupt $ do
