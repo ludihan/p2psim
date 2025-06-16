@@ -75,7 +75,6 @@ data Search = Search
     , algo :: SearchAlgorithm
     , found :: Bool
     , visited :: Visited
-    , cache :: Map.Map Text [Text]
     }
     deriving (Show)
 
@@ -165,7 +164,6 @@ parseSearch = do
                 , algo = algo'
                 , found = False
                 , visited = Set.empty
-                , cache = Map.empty
                 }
 
 parseCommand :: Parser Command

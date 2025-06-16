@@ -43,11 +43,11 @@ graphSearch config@Config{..} search@Search{..} gen
                 [] -> [search{visited = visited', found = False}]
                 _ ->
                     let (nextNodes, gen') = case algo of
-                            Flooding -> (unvisited, gen)
+                            Flooding -> (neighbors, gen)
                             InformedFlooding -> (unvisited, gen)
                             RandomWalk ->
-                                let (idx, g') = randomR (0, length unvisited - 1) gen
-                                 in ([unvisited !! idx], g')
+                                let (idx, g') = randomR (0, length neighbors - 1) gen
+                                 in ([neighbors !! idx], g')
                             InformedRandomWalk ->
                                 let (idx, g') = randomR (0, length unvisited - 1) gen
                                  in ([unvisited !! idx], g')
@@ -63,7 +63,6 @@ graphSearch config@Config{..} search@Search{..} gen
                                         , algo = algo
                                         , found = False
                                         , visited = visited'
-                                        , cache = cache
                                         }
                                 )
                                 nextNodes
