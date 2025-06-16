@@ -5,29 +5,27 @@ module Simulator (
     simulation,
 ) where
 
-import Control.Monad.IO.Class (liftIO)
 import Data.List (sort)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text.IO as TIO
-import System.Console.Haskeline
 import System.Random
 import Types
 import Validator
 
-simulation :: Config -> Search -> InputT IO ()
+simulation :: Config -> Search -> IO ()
 simulation config search@Search{..} = do
-    isValid <- validateSearch config search
-    if not isValid
-        then liftIO $ TIO.putStrLn "Validation failed. Simulation aborted."
+    let errs = validateSearch config search
+    if not (null errs)
+        then printErrs errs
         else do
-            gen <- liftIO newStdGen
+            gen <- newStdGen
             let strategy = strategyFor algo
                 (logTrace, result) = graphSearch config search strategy gen
-            mapM_ (liftIO . TIO.putStrLn . showSearch) logTrace
-            liftIO $ TIO.putStrLn (if result then "Search successful!" else "Search failed...")
+            mapM_ (TIO.putStrLn . showSearch) logTrace
+            TIO.putStrLn (if result then "Search successful!" else "Search failed...")
 
 graphSearch ::
     Config ->

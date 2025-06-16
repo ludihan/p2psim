@@ -8,13 +8,11 @@ module Validator (
 
 import Types
 
-import Control.Monad.IO.Class (liftIO)
 import Data.List
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
-import System.Console.Haskeline
 
 validateTOML :: Config -> Either [Err] Config
 validateTOML cfg@Config{..} =
@@ -38,8 +36,8 @@ validateTOML cfg@Config{..} =
             then Right cfg
             else Left $ map Err allErrs
 
-validateSearch :: Config -> Search -> InputT IO Bool
-validateSearch Config{..} Search{..} = do
+validateSearch :: Config -> Search -> [Err]
+validateSearch Config{..} Search{..} =
     let errors =
             [ if nodeId `notElem` Map.keys resources
                 then Just $ Err $ "node \"" <> nodeId <> "\" does not exist"
@@ -51,11 +49,7 @@ validateSearch Config{..} Search{..} = do
                 then Just $ Err $ "resource \"" <> resourceId <> "\" not found in any node"
                 else Nothing
             ]
-
-    let errs = catMaybes errors
-
-    liftIO $ printErrs errs
-    return $ null errs
+     in catMaybes errors
 
 resourceExists :: Text -> Resources -> Bool
 resourceExists rid = any (elem rid)

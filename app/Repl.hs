@@ -23,7 +23,7 @@ repl :: Config -> IO ()
 repl cfg = runInputT defaultSettings loop
   where
     loop :: InputT IO ()
-    loop = do
+    loop = handleInterrupt loop $ withInterrupt $ do
         stdoutSupportsANSI <- liftIO $ hNowSupportsANSI stdout
         let haskeline =
                 if stdoutSupportsANSI
@@ -37,42 +37,46 @@ repl cfg = runInputT defaultSettings loop
         minput <- haskeline
         case minput of
             Nothing -> return ()
-            Just input ->
-                case parse parseCommand "<stdin>" (T.pack input) of
-                    Left e -> do
-                        liftIO $ printErrs [Err $ T.pack $ errorBundlePretty e]
-                        loop
-                    Right Help -> do
-                        liftIO $ TIO.putStrLn showHelp
-                        loop
-                    Right List -> do
-                        liftIO $ TIO.putStrLn $ showConfigList cfg
-                        loop
-                    Right (SearchCommand search) -> do
-                        simulation cfg search
-                        loop
-                    Right Algo -> do
-                        liftIO $ TIO.putStrLn showAvailableAlgo
-                        loop
-                    Right Reload -> do
-                        args <- liftIO getArgs
-                        cfg' <- liftIO $ readConfigFromArgs args
-                        case cfg' of
-                            Right cfg'' -> do
-                                liftIO $ TIO.putStrLn "config file successfully read!"
-                                liftIO $ repl cfg''
-                            Left err -> do
-                                liftIO $
-                                    printErrs $
-                                        Err
-                                            "failed to load config file, \
-                                            \using previous configuration"
-                                            : err
-                                loop
-                    Right Render -> do
-                        liftIO $ renderConfig cfg
-                        loop
-                    Right Quit -> return ()
+            Just input -> do
+                result <- liftIO $ handleCommand cfg input
+                case result of
+                    Nothing -> loop
+                    Just a -> liftIO $ repl a
+
+handleCommand :: Config -> String -> IO (Maybe Config)
+handleCommand cfg input =
+    case parse parseCommand "<stdin>" (T.pack input) of
+        Left e -> do
+            printErrs [Err $ T.pack $ errorBundlePretty e]
+            return Nothing
+        Right Help -> do
+            TIO.putStrLn showHelp
+            return Nothing
+        Right List -> do
+            TIO.putStrLn $ showConfigList cfg
+            return Nothing
+        Right (SearchCommand search) -> do
+            simulation cfg search
+            return Nothing
+        Right Algo -> do
+            TIO.putStrLn showAvailableAlgo
+            return Nothing
+        Right Reload -> do
+            args <- getArgs
+            cfg' <- readConfigFromArgs args
+            case cfg' of
+                Right newCfg -> do
+                    TIO.putStrLn "config file successfully read!"
+                    return (Just newCfg)
+                Left err -> do
+                    printErrs $
+                        Err "failed to load config file, using previous configuration"
+                            : err
+                    return Nothing
+        Right Render -> do
+            renderConfig cfg
+            return Nothing
+        Right Quit -> return Nothing
 
 showHelp :: Text
 showHelp =
