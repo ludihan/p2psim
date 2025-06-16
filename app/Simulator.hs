@@ -25,7 +25,7 @@ simulation config search@Search{..} = do
             let strategy = strategyFor algo
                 (logTrace, result) = graphSearch config search strategy gen
             mapM_ (TIO.putStrLn . showSearch) logTrace
-            TIO.putStrLn (if result then "Search successful!" else "Search failed...")
+            TIO.putStrLn (if result then "search successful!" else "search failed...")
 
 graphSearch ::
     Config ->

@@ -18,7 +18,7 @@ main = do
     cfg <- readConfigFromArgs args
     case cfg of
         Right cfg' -> do
-            TIO.putStrLn "Type \"help\" for help"
+            TIO.putStrLn "Type \"help\" for help."
             repl cfg'
             stdoutSupportsANSI <- hNowSupportsANSI stdout
             when stdoutSupportsANSI $ do

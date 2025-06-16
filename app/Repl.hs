@@ -7,7 +7,6 @@ module Repl (
 
 import Config
 import Control.Monad.IO.Class
-import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -40,63 +39,64 @@ repl cfg = runInputT defaultSettings loop
             Just input -> do
                 result <- liftIO $ handleCommand cfg input
                 case result of
-                    Nothing -> loop
-                    Just a -> liftIO $ repl a
+                    Left () -> return ()
+                    Right Nothing -> loop
+                    Right (Just a) -> liftIO $ repl a
 
-handleCommand :: Config -> String -> IO (Maybe Config)
+handleCommand :: Config -> String -> IO (Either () (Maybe Config))
 handleCommand cfg input =
     case parse parseCommand "<stdin>" (T.pack input) of
         Left e -> do
             printErrs [Err $ T.pack $ errorBundlePretty e]
-            return Nothing
+            return $ Right Nothing
         Right Help -> do
             TIO.putStrLn showHelp
-            return Nothing
+            return $ Right Nothing
         Right List -> do
             TIO.putStrLn $ showConfigList cfg
-            return Nothing
+            return $ Right Nothing
         Right (SearchCommand search) -> do
             simulation cfg search
-            return Nothing
+            return $ Right Nothing
         Right Algo -> do
             TIO.putStrLn showAvailableAlgo
-            return Nothing
+            return $ Right Nothing
         Right Reload -> do
             args <- getArgs
             cfg' <- readConfigFromArgs args
             case cfg' of
                 Right newCfg -> do
-                    TIO.putStrLn "config file successfully read!"
-                    return (Just newCfg)
+                    TIO.putStrLn "config file successfully reloaded!"
+                    return $ Right (Just newCfg)
                 Left err -> do
                     printErrs $
-                        Err "failed to load config file, using previous configuration"
+                        Err "failed to reload config file, using previous configuration"
                             : err
-                    return Nothing
+                    return $ Right Nothing
         Right Render -> do
             renderConfig cfg
-            return Nothing
-        Right Quit -> return Nothing
+            return $ Right Nothing
+        Right Quit -> return $ Left ()
 
 showHelp :: Text
 showHelp =
-    "Use \"help\" for help\n\
-    \Use \"list\" to list all settings from the config file\n\
-    \Use \"render\" to render the current graph to \"graph.png\"\n\
-    \Use \"search\" with the nodeID, resourceID, ttl and a algorithm to search for a resource\n\
-    \Use \"algo\" to list all available algorithms\n\
-    \Use \"reload\" to reload the config file\n\
-    \Use \"quit\" to quit the program"
+    "use \"help\" for help\n\
+    \use \"list\" to list all settings from the config file\n\
+    \use \"render\" to render the current graph to \"graph.png\"\n\
+    \use \"search\" with the nodeID, resourceID, ttl and a algorithm to search for a resource\n\
+    \use \"algo\" to list all available algorithms\n\
+    \use \"reload\" to reload the config file\n\
+    \use \"quit\" to quit the program"
 
 showAvailableAlgo :: Text
 showAvailableAlgo =
     T.intercalate
         "\n"
-        [ "Available algorithms are:"
-        , "flooding"
-        , "informed_flooding"
-        , "random_walk"
-        , "informed_random_walk"
+        [ "available algorithms are:"
+        , "  flooding"
+        , "  informed_flooding"
+        , "  random_walk"
+        , "  informed_random_walk"
         ]
 
 showConfigList :: Config -> Text
@@ -117,18 +117,3 @@ showConfigList Config{..} =
         , "edges:\n"
         , fmtEdges edges
         ]
-
-fmtEdges :: Edges -> Text
-fmtEdges edges =
-    let adj = buildAdjacencyFromEdges edges
-     in fmtList $ Map.toList adj
-
-fmtResources :: Resources -> Text
-fmtResources res =
-    fmtList $ Map.toList res
-
-fmtList :: (Show k, Show v) => [(k, v)] -> Text
-fmtList list =
-    T.intercalate
-        "\n"
-        [T.pack (show k) <> " => " <> T.pack (show v) | (k, v) <- list]

@@ -228,3 +228,21 @@ showAlgo Flooding = "flooding"
 showAlgo InformedFlooding = "informed_flooding"
 showAlgo RandomWalk = "random_walk"
 showAlgo InformedRandomWalk = "informed_random_walk"
+
+fmtEdges :: Edges -> Text
+fmtEdges edges =
+    let adj = buildAdjacencyFromEdges edges
+     in fmtMapList $ Map.toList adj
+
+fmtResources :: Resources -> Text
+fmtResources res =
+    fmtMapList $ Map.toList res
+
+fmtMapList :: [(Text, [Text])] -> Text
+fmtMapList list =
+    T.intercalate
+        "\n"
+        [k <> " => " <> fmtList v | (k, v) <- list]
+
+fmtList :: [Text] -> Text
+fmtList list = "[" <> T.intercalate "," list <> "]"
