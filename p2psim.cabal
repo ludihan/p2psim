@@ -16,6 +16,7 @@ executable p2psim
         , ansi-terminal
         , base           ^>=4.18.3.0
         , containers
+        , graphviz
         , haskeline
         , megaparsec
         , random
