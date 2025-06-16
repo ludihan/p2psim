@@ -1,3 +1,5 @@
+min_neighbors = 2
+# max_neighbors = 4
 # (both of these are optional)
 
 edges = [
@@ -6,7 +8,6 @@ edges = [
     ["n2", "n3"],
     ["n3", "n4"],
     ["n6", "n5"],
-    ["n6", "n9"],
     ["n6", "n4"],
     ["n4", "n6"],
     ["n4", "n6"],
@@ -20,4 +21,3 @@ n3 = ["r6"]
 n4 = ["r7"]
 n5 = ["r8"]
 n6 = ["r9"]
-n9 = ["r12"]

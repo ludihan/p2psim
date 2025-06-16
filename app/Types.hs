@@ -36,8 +36,8 @@ data Config = Config
 instance DecodeTOML Config where
     tomlDecoder =
         Config
-            <$> getFieldOpt "min_neighbours"
-            <*> getFieldOpt "max_neighbours"
+            <$> getFieldOpt "min_neighbors"
+            <*> getFieldOpt "max_neighbors"
             <*> getField "resources"
             <*> getField "edges"
 
