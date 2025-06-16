@@ -25,12 +25,12 @@ readConfig cfgPath = do
 renderConfig :: Config -> IO ()
 renderConfig Config{..} = do
     let adj = convertAdjMap $ buildAdjacencyFromEdges edges
-    let myGraph = fromAdjacencyMap adj
+    let myGraph = fromAdjacencyMap adj resources
     fPath <- runGraphvizCommand Circo myGraph Png "graph.png"
     putStrLn $ "graph written to " ++ fPath
 
-fromAdjacencyMap :: Map.Map TL.Text [TL.Text] -> Data.GraphViz.DotGraph TL.Text
-fromAdjacencyMap adj =
+fromAdjacencyMap :: Map.Map TL.Text [TL.Text] -> Resources -> Data.GraphViz.DotGraph TL.Text
+fromAdjacencyMap adj res =
     Data.GraphViz.DotGraph
         { strictGraph = False
         , directedGraph = False
@@ -41,11 +41,11 @@ fromAdjacencyMap adj =
                 , subGraphs = []
                 , nodeStmts =
                     [ DotNode
-                        k
+                        (TL.fromStrict k)
                         [ shape Circle
-                        , textLabel (k <> "\n" <> TL.fromStrict (fmtList (map TL.toStrict v)))
+                        , textLabel (TL.fromStrict k <> "\n" <> TL.fromStrict (fmtList v))
                         ]
-                    | (k, v) <- Map.toList adj
+                    | (k, v) <- Map.toList res
                     ]
                 , edgeStmts = [DotEdge a b [] | (a, bs) <- Map.toList adj, b <- bs, a < b]
                 }
