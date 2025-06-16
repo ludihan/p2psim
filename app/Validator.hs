@@ -33,7 +33,13 @@ validateTOML cfg@Config{..} =
                 ]
      in
         if null allErrs
-            then Right cfg
+            then
+                Right
+                    cfg
+                        { resources =
+                            Map.fromList
+                                [(k, nub v) | (k, v) <- Map.toList resources]
+                        }
             else Left $ map Err allErrs
 
 validateSearch :: Config -> Search -> [Err]
