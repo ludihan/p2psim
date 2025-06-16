@@ -56,13 +56,16 @@ buildAdjacencyFromEdges edges' =
         Map.map nub merged
 
 type Resources = Map Text [Text]
+type Nodes = Map Text [Text]
+type Node = Text
+type Visited = Set.Set [Text]
 
 data SearchAlgorithm
     = Flooding
     | InformedFlooding
     | RandomWalk
     | InformedRandomWalk
-    deriving (Show)
+    deriving (Show,Eq)
 
 data Search = Search
     { nodeId :: Text
@@ -71,16 +74,16 @@ data Search = Search
     , ttl :: Int
     , algo :: SearchAlgorithm
     , found :: Bool
+    , visited :: Visited
+    , cache :: Map.Map Text [Text]
     }
     deriving (Show)
 
 type SearchFound = Bool
-type SearchResult = ([Search], SearchFound)
+type SearchResults = [Search]
 
-data SearchStrategy = SearchStrategy
-    { selectNext :: [Text] -> Set.Set Text -> StdGen -> ([Text], StdGen)
-    , order :: [Text] -> [Text]
-    , useRandom :: Bool
+newtype SearchStrategy = SearchStrategy
+    { selectNextNodes :: Nodes -> Set.Set Text -> StdGen -> ([Text], StdGen)
     }
 
 printErr :: Err -> IO ()
@@ -161,6 +164,8 @@ parseSearch = do
                 , ttl = ttl'
                 , algo = algo'
                 , found = False
+                , visited = Set.empty
+                , cache = Map.empty
                 }
 
 parseCommand :: Parser Command
@@ -185,9 +190,9 @@ showSearch Search{..} =
             ttl
             (fromMaybe nodeId nodeParentId)
             nodeId
-            ( if ttl == 0
-                then ("dead" :: Text)
-                else if found then "resource found" else "searching"
+            ( if found
+                then ("resource found" :: Text)
+                else if ttl == 0 then "dead" else "searching"
             )
 
 showAlgo :: SearchAlgorithm -> Text

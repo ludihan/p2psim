@@ -5,7 +5,6 @@ module Simulator (
     simulation,
 ) where
 
-import Data.List (sort)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -16,82 +15,60 @@ import Types
 import Validator
 
 simulation :: Config -> Search -> IO ()
-simulation config search@Search{..} = do
+simulation config search = do
     let errs = validateSearch config search
     if not (null errs)
         then printErrs errs
         else do
             gen <- newStdGen
-            let strategy = strategyFor algo
-                (logTrace, result) = graphSearch config search strategy gen
-            mapM_ (TIO.putStrLn . showSearch) logTrace
-            TIO.putStrLn (if result then "search successful!" else "search failed...")
+            let trace = graphSearch config search gen
+            mapM_ (TIO.putStrLn . showSearch) trace
+            TIO.putStrLn (if any found trace then "search successful!" else "search failed...")
 
 graphSearch ::
     Config ->
     Search ->
-    SearchStrategy ->
     StdGen ->
-    SearchResult
-graphSearch config@Config{..} search@Search{..} strategy@SearchStrategy{..} gen =
-    go gen Nothing start ttl Set.empty
-  where
-    adj = buildAdjacencyFromEdges edges
-    start = nodeId
-    target = resourceId
+    SearchResults
+graphSearch config@Config{..} search@Search{..} gen
+    | Set.member nodeId (Set.map head visited) = [search{found = False}]
+    | hasResource nodeId resourceId resources = [search{found = True}]
+    | ttl <= 0 = [search{found = False}]
+    | otherwise =
+        let adj = buildAdjacencyFromEdges edges
+            visited' = Set.insert [nodeId] visited
+            neighbors = fromMaybe [] (Map.lookup nodeId adj)
+            unvisited = filter (\n -> not (Set.member [n] visited')) neighbors
+         in case unvisited of
+                [] -> [search{visited = visited', found = False}]
+                _ ->
+                    let (nextNodes, gen') = case algo of
+                            Flooding -> (unvisited, gen)
+                            InformedFlooding -> (unvisited, gen)
+                            RandomWalk ->
+                                let (idx, g') = randomR (0, length unvisited - 1) gen
+                                 in ([unvisited !! idx], g')
+                            InformedRandomWalk ->
+                                let (idx, g') = randomR (0, length unvisited - 1) gen
+                                 in ([unvisited !! idx], g')
 
-    go :: StdGen -> Maybe Text -> Text -> Int -> Set.Set Text -> SearchResult
-    go _ _ _ 0 _ =
-        let step = Search start Nothing target 0 algo False
-         in ([step], False)
-    go g parent current t visited
-        | hasResource current target resources =
-            let step = Search current parent target t algo True
-             in ([step], True)
-        | otherwise =
-            let visited' = Set.insert current visited
-                neighbors0 = fromMaybe [] (Map.lookup current adj)
-                neighbors1 = filter (`Set.notMember` visited') neighbors0
-                ordered = order neighbors1
-                (nextNodes, g') =
-                    if useRandom
-                        then selectNext ordered visited' g
-                        else (ordered, g)
-                step = Search current parent target t algo False
-                outcomes = map (\n -> go g' (Just current) n (t - 1) visited') nextNodes
-                (traces, results) = unzip outcomes
-                found' = or results
-             in (step : concat traces, found')
-
-floodingStrategy :: SearchStrategy
-floodingStrategy =
-    SearchStrategy
-        { selectNext = \ns _ g -> (ns, g)
-        , order = id
-        , useRandom = False
-        }
-
-informedFloodingStrategy :: SearchStrategy
-informedFloodingStrategy = floodingStrategy{order = sort}
-
-randomWalkStrategy :: SearchStrategy
-randomWalkStrategy =
-    SearchStrategy
-        { selectNext = \ns _ g ->
-            let (i, g') = randomR (0, length ns - 1) g
-             in ([ns !! i], g')
-        , order = id
-        , useRandom = True
-        }
-
-informedRandomWalkStrategy :: SearchStrategy
-informedRandomWalkStrategy = randomWalkStrategy{order = sort}
-
-strategyFor :: SearchAlgorithm -> SearchStrategy
-strategyFor Flooding = floodingStrategy
-strategyFor InformedFlooding = informedFloodingStrategy
-strategyFor RandomWalk = randomWalkStrategy
-strategyFor InformedRandomWalk = informedRandomWalkStrategy
+                        nextSearches =
+                            map
+                                ( \nextNode ->
+                                    Search
+                                        { nodeId = nextNode
+                                        , nodeParentId = Just nodeId
+                                        , resourceId = resourceId
+                                        , ttl = ttl - 1
+                                        , algo = algo
+                                        , found = False
+                                        , visited = visited'
+                                        , cache = cache
+                                        }
+                                )
+                                nextNodes
+                        traces = concatMap (\s -> graphSearch config s gen') nextSearches
+                     in search : traces
 
 hasResource :: Text -> Text -> Resources -> Bool
 hasResource nCurrent res nodesMap = maybe False (elem res) (Map.lookup nCurrent nodesMap)
