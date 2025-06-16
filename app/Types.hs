@@ -163,51 +163,18 @@ parseSearch = do
                 , found = False
                 }
 
-parseHelp :: Parser Command
-parseHelp = do
-    space
-    _ <- string' "help"
-    return Help
-
-parseList :: Parser Command
-parseList = do
-    space
-    _ <- string' "list"
-    return List
-
-parseAlgo :: Parser Command
-parseAlgo = do
-    space
-    _ <- string' "algo"
-    return Algo
-
-parseQuit :: Parser Command
-parseQuit = do
-    space
-    _ <- string' "quit"
-    return Quit
-
-parseReload :: Parser Command
-parseReload = do
-    space
-    _ <- string' "reload"
-    return Reload
-
-parseRender :: Parser Command
-parseRender = do
-    space
-    _ <- string' "render"
-    return Render
-
 parseCommand :: Parser Command
-parseCommand =
-    try parseHelp
-        <|> try parseList
-        <|> try parseSearch
-        <|> try parseAlgo
-        <|> try parseReload
-        <|> try parseQuit
-        <|> try parseRender
+parseCommand = do
+    space
+    choice
+        [ parseSearch
+        , string' "help" >> return Help
+        , string' "list" >> return List
+        , string' "algo" >> return Algo
+        , string' "quit" >> return Quit
+        , string' "reload" >> return Reload
+        , string' "render" >> return Render
+        ]
 
 showSearch :: Search -> Text
 showSearch Search{..} =
