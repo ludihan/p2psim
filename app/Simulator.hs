@@ -26,8 +26,8 @@ simulation config search = do
             let trace = graphSearch config search gen
             let nodeCounts = countNodeActivity trace
             let (node, times) = head $ sortOn (Down . snd) (Map.toList nodeCounts)
-            mapM_ (TIO.putStrLn . showSearch) trace
-            TIO.putStrLn $ "total of " <> T.pack (show $ length trace) <> " messages."
+            mapM_ (TIO.putStrLn . showSearch) (tail trace)
+            TIO.putStrLn $ "total of " <> T.pack (show $ length (tail trace)) <> " messages."
             TIO.putStrLn $
                 T.concat
                     [ "most messages mentioned node "
