@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Simulator (
     simulation,
@@ -24,19 +25,28 @@ simulation config search = do
         else do
             gen <- newStdGen
             let trace = graphSearch config search gen
-            let nodeCounts = countNodeActivity trace
-            let (node, times) = head $ sortOn (Down . snd) (Map.toList nodeCounts)
             mapM_ (TIO.putStrLn . showSearch) (tail trace)
             TIO.putStrLn $ "total of " <> T.pack (show $ length (tail trace)) <> " messages."
-            TIO.putStrLn $
-                T.concat
-                    [ "most messages mentioned node "
-                    , node
-                    , " ("
-                    , T.pack $ show times
-                    , " times"
-                    , ")"
-                    ]
+            if length trace == 1
+                then
+                    TIO.putStrLn $
+                        T.concat
+                            [ "node "
+                            , nodeId search
+                            , " already has the resource"
+                            ]
+                else do
+                    let nodeCounts = countNodeActivity (tail trace)
+                    let (node, times) = head $ sortOn (Down . snd) (Map.toList nodeCounts)
+                    TIO.putStrLn $
+                        T.concat
+                            [ "most messages mentioned node "
+                            , node
+                            , " ("
+                            , T.pack $ show times
+                            , " times"
+                            , ")"
+                            ]
             TIO.putStrLn (if any found trace then "search successful!" else "search failed...")
 
 countNodeActivity :: [Search] -> Map.Map Text Int
@@ -65,40 +75,22 @@ graphSearch Config{..} search gen
 
             unvisited = filter (`Set.notMember` visited') neighbors
 
-            sortByDegreeDesc :: [Text] -> [Text]
-            sortByDegreeDesc =
-                let degree n = length (Map.findWithDefault [] n adj)
-                 in sortOn (Data.Ord.Down . degree)
-
-            weightedRandom :: [a] -> [Int] -> StdGen -> (a, StdGen)
-            weightedRandom xs ws gen'' =
-                let total = sum ws
-                    (r, gen''') = randomR (1, total) gen''
-                 in (pick r (zip xs (scanl1 (+) ws)), gen''')
+            shuffle :: StdGen -> [a] -> ([a], StdGen)
+            shuffle gen''' xs = shuffle' gen''' xs []
               where
-                pick r ((x, w) : rest)
-                    | r <= w = x
-                    | otherwise = pick r rest
-                pick _ [] = error "weightedRandom: empty list"
+                shuffle' g [] acc = (acc, g)
+                shuffle' g ys acc =
+                    let (i, g') = randomR (0, length ys - 1) g
+                        (before, y : after) = splitAt i ys
+                     in shuffle' g' (before ++ after) (y : acc)
 
             (nextNodes, gen') =
                 case algo search of
                     Flooding -> (unvisited, gen)
-                    InformedFlooding -> (sortByDegreeDesc unvisited, gen)
                     RandomWalk ->
                         if null unvisited
                             then ([], gen)
-                            else
-                                let (idx, g') = randomR (0, length unvisited - 1) gen
-                                 in ([unvisited !! idx], g')
-                    InformedRandomWalk ->
-                        if null unvisited
-                            then ([], gen)
-                            else
-                                let degrees = map (\n -> (n, length $ Map.findWithDefault [] n adj)) unvisited
-                                    (choices, weights) = unzip degrees
-                                    (choice, g') = weightedRandom choices weights gen
-                                 in ([choice], g')
+                            else shuffle gen unvisited
 
             nextSearches =
                 [ Search
@@ -115,8 +107,18 @@ graphSearch Config{..} search gen
 
             nextResults =
                 concatMap (\s -> graphSearch Config{..} s gen') nextSearches
+
+            takeUntilFound :: [Search] -> [Search]
+            takeUntilFound = go
+              where
+                go [] = []
+                go (s : ss)
+                    | found s = [s]
+                    | otherwise = s : go ss
          in
-            search{visited = visited'} : nextResults
+            case algo search of
+                RandomWalk -> takeUntilFound $ search{visited = visited'} : nextResults
+                _ -> search{visited = visited'} : nextResults
 
 hasResource :: Text -> Text -> Resources -> Bool
 hasResource nCurrent res nodesMap = maybe False (elem res) (Map.lookup nCurrent nodesMap)

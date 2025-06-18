@@ -22,12 +22,18 @@ readConfig cfgPath = do
         Right cfg -> validateTOML cfg
         Left err -> Left [Err $ renderTOMLError err]
 
-renderConfig :: Config -> IO ()
+renderConfig :: Config -> IO (Either Err ())
 renderConfig Config{..} = do
     let adj = convertAdjMap $ buildAdjacencyFromEdges edges
     let myGraph = fromAdjacencyMap adj resources
-    fPath <- runGraphvizCommand Circo myGraph Png "graph.png"
-    putStrLn $ "graph written to " ++ fPath
+    installed <- isGraphvizInstalled
+    if installed
+        then do
+            fPath <- runGraphvizCommand Circo myGraph Png "graph.png"
+            putStrLn $ "graph written to " ++ fPath
+            return $ Right ()
+        else
+            return $ Left $ Err "graphviz is not installed! couldn't render graph!"
 
 fromAdjacencyMap :: Map.Map TL.Text [TL.Text] -> Resources -> Data.GraphViz.DotGraph TL.Text
 fromAdjacencyMap adj res =

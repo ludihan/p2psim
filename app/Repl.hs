@@ -81,7 +81,12 @@ handleCommand cfg input =
                             : err
                     return $ Right Nothing
         Right Render -> do
-            renderConfig cfg
+            result <- renderConfig cfg
+            case result of
+                Right _ ->
+                    return ()
+                Left err ->
+                    printErr err
             return $ Right Nothing
         Right Quit -> return $ Left ()
 
@@ -101,9 +106,7 @@ showAvailableAlgo =
         "\n"
         [ "available algorithms are:"
         , "  flooding"
-        , "  informed_flooding"
         , "  random_walk"
-        , "  informed_random_walk"
         ]
 
 showConfigList :: Config -> Text

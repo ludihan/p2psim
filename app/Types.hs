@@ -62,9 +62,7 @@ type Visited = Set.Set Text
 
 data SearchAlgorithm
     = Flooding
-    | InformedFlooding
     | RandomWalk
-    | InformedRandomWalk
     deriving (Show,Eq)
 
 data Search = Search
@@ -141,17 +139,9 @@ parseSearch = do
                 >> return Flooding
             )
             <|> try
-                ( string' "informed_flooding"
-                    >> return InformedFlooding
-                )
-            <|> try
                 ( string' "random_walk"
                     >> return
                         RandomWalk
-                )
-            <|> try
-                ( string' "informed_random_walk"
-                    >> return InformedRandomWalk
                 )
 
     return $
@@ -195,9 +185,7 @@ showSearch Search{..} =
 
 showAlgo :: SearchAlgorithm -> Text
 showAlgo Flooding = "flooding"
-showAlgo InformedFlooding = "informed_flooding"
 showAlgo RandomWalk = "random_walk"
-showAlgo InformedRandomWalk = "informed_random_walk"
 
 fmtEdges :: Edges -> Text
 fmtEdges edges =
