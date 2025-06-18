@@ -105,8 +105,8 @@ showAvailableAlgo =
     T.intercalate
         "\n"
         [ "available algorithms are:"
-        , "  flooding"
-        , "  random_walk"
+        , "flooding"
+        , "random_walk"
         ]
 
 showConfigList :: Config -> Text
